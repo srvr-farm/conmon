@@ -61,7 +61,7 @@ This means the service manages the stack as a unit. The helper binary installed 
 
 ### Network and data flow
 
-- Prometheus is bound to `127.0.0.1:9090`.
+- Prometheus is bound to `127.0.0.1:9091`.
 - Grafana is bound to `127.0.0.1:3000`.
 - The `conmon` metrics endpoint is expected to exist only on the internal Compose network at `conmon:9109`.
 - Prometheus data persists under `$(DATA_DIR)/prometheus`.
