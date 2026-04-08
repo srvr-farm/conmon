@@ -40,7 +40,7 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
     ports:
-      - 127.0.0.1:3000:3000
+      - ${CONMON_GRAFANA_BIND:-0.0.0.0:3000:3000}
     volumes:
       - ${CONMON_DATA_DIR:-/var/lib/conmon}/grafana:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

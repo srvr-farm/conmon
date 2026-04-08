@@ -57,12 +57,12 @@ This means the service manages the stack as a unit. The helper binary installed 
 
 - `conmon`: built from the source tree copied into the install root, mounts the operator config read-only, and is granted `NET_RAW` so the future ICMP probe implementation can run.
 - `prometheus`: scrapes `conmon:9109` on the internal Compose network and stores data in the configured data directory with 90 day retention.
-- `grafana`: provisions a Prometheus datasource and a starter dashboard automatically, then serves the UI on `127.0.0.1:3000`.
+- `grafana`: provisions a Prometheus datasource and a starter dashboard automatically, then serves the UI on `0.0.0.0:3000` by default.
 
 ### Network and data flow
 
 - Prometheus is bound to `127.0.0.1:9091`.
-- Grafana is bound to `127.0.0.1:3000`.
+- Grafana is bound to `0.0.0.0:3000` by default.
 - The `conmon` metrics endpoint is published on the host as `0.0.0.0:9109` by default and is also reachable on the internal Compose network at `conmon:9109`.
 - Prometheus data persists under `$(DATA_DIR)/prometheus`.
 - Grafana data persists under `$(DATA_DIR)/grafana`.
@@ -113,10 +113,13 @@ The Compose file itself also honors these environment variables at runtime:
 - `CONMON_DATA_DIR`
 - `CONMON_IMAGE_TAG`
 - `CONMON_METRICS_BIND`
+- `CONMON_GRAFANA_BIND`
 
 The installed systemd unit sets those environment variables so the Compose stack uses the same paths that were chosen at install time.
 
 `CONMON_METRICS_BIND` controls how the `conmon` metrics port is published on the host. By default it is `0.0.0.0:9109:9109`. You can override it before running `docker compose` if you want to restrict the bind address or move the host port.
+
+`CONMON_GRAFANA_BIND` controls how the Grafana UI is published on the host. By default it is `0.0.0.0:3000:3000`. You can override it before running `docker compose` if you want to restrict the bind address or move the host port.
 
 ## Local Development Build
 
