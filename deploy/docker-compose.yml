@@ -12,6 +12,8 @@ services:
       - ${CONMON_CONFIG_FILE:-/etc/conmon/config.yml}:/etc/conmon/config.yml:ro
     expose:
       - "9109"
+    ports:
+      - ${CONMON_METRICS_BIND:-0.0.0.0:9109:9109}
     networks:
       - conmon
 

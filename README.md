@@ -63,7 +63,7 @@ This means the service manages the stack as a unit. The helper binary installed 
 
 - Prometheus is bound to `127.0.0.1:9091`.
 - Grafana is bound to `127.0.0.1:3000`.
-- The `conmon` metrics endpoint is expected to exist only on the internal Compose network at `conmon:9109`.
+- The `conmon` metrics endpoint is published on the host as `0.0.0.0:9109` by default and is also reachable on the internal Compose network at `conmon:9109`.
 - Prometheus data persists under `$(DATA_DIR)/prometheus`.
 - Grafana data persists under `$(DATA_DIR)/grafana`.
 
@@ -112,8 +112,11 @@ The Compose file itself also honors these environment variables at runtime:
 - `CONMON_CONFIG_FILE`
 - `CONMON_DATA_DIR`
 - `CONMON_IMAGE_TAG`
+- `CONMON_METRICS_BIND`
 
 The installed systemd unit sets those environment variables so the Compose stack uses the same paths that were chosen at install time.
+
+`CONMON_METRICS_BIND` controls how the `conmon` metrics port is published on the host. By default it is `0.0.0.0:9109:9109`. You can override it before running `docker compose` if you want to restrict the bind address or move the host port.
 
 ## Local Development Build
 
