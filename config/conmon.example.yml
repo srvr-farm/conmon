@@ -1,0 +1,63 @@
+# conmon configuration example
+
+defaults:
+  # Base cadence and timeouts for all checks unless overridden.
+  interval: 30s
+  timeout: 5s
+
+  # Default DNS server if a DNS check does not specify one.
+  dns:
+    server: 10.0.0.1
+
+  # Default TLS expiry threshold in days.
+  tls:
+    min_days_remaining: 21
+
+  # Optional labels applied to all checks.
+  labels:
+    site: home-lab
+
+groups:
+  - name: internet
+    checks:
+      - id: internet-web
+        name: Callan Architects HTTPS
+        kind: https
+        scope: external
+        url: https://callanarchitects.com/
+        expected_status: [200]
+        headers:
+          User-Agent: conmon
+        tls_server_name: callanarchitects.com
+
+      - id: internet-cert
+        name: Callan Architects TLS
+        kind: tls
+        scope: external
+        host: callanarchitects.com
+        port: 443
+        server_name: callanarchitects.com
+
+      - id: public-dns-ping
+        name: Public DNS Reachability
+        kind: icmp
+        scope: internet
+        host: 8.8.8.8
+
+      - id: gateway-ping
+        name: Gateway Reachability
+        kind: icmp
+        scope: internal
+        host: 10.0.0.1
+
+      - id: gateway-dns
+        name: Gateway DNS Resolution
+        kind: dns
+        scope: internal
+        server: 10.0.0.1
+        query_name: callanarchitects.com
+        record_type: A
+        expected_rcode: NOERROR
+
+export:
+  listen_address: 0.0.0.0:9109

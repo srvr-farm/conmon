@@ -1,0 +1,17 @@
+defaults:
+  interval: 30s
+  timeout: 5s
+  labels:
+    __reserved: value
+
+groups:
+  - name: internet
+    checks:
+      - id: internet-gateway
+        name: Gateway
+        kind: icmp
+        scope: internet
+        host: 1.1.1.1
+
+export:
+  listen_address: 0.0.0.0:9109

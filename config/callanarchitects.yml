@@ -1,0 +1,37 @@
+# Test configuration for callanarchitects.com.
+
+defaults:
+  interval: 15s
+  timeout: 10s
+  tls:
+    min_days_remaining: 14
+  labels:
+    environment: live-test
+    target_site: callanarchitects
+
+groups:
+  - name: external-sites
+    checks:
+      - id: callanarchitects-homepage
+        name: Callan Architects Homepage
+        kind: https
+        scope: external
+        url: https://callanarchitects.com/
+        method: GET
+        expected_status: [200]
+        labels:
+          check_role: availability
+
+      - id: callanarchitects-certificate
+        name: Callan Architects Certificate
+        kind: tls
+        scope: external
+        host: callanarchitects.com
+        port: 443
+        server_name: callanarchitects.com
+        min_days_remaining: 14
+        labels:
+          check_role: certificate
+
+export:
+  listen_address: 127.0.0.1:19109

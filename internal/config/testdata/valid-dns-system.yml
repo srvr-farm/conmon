@@ -1,0 +1,16 @@
+defaults:
+  interval: 30s
+  timeout: 5s
+
+groups:
+  - name: external
+    checks:
+      - id: system-resolver-dns
+        name: System Resolver
+        kind: dns
+        scope: external
+        query_name: example.com
+        record_type: A
+
+export:
+  listen_address: 0.0.0.0:9109

@@ -1,0 +1,16 @@
+defaults:
+  interval: 30s
+  timeout: 5s
+
+groups:
+  - name: internet
+    checks:
+      - id: bad-method
+        name: Bad Method
+        kind: http
+        scope: internet
+        url: http://example.com/health
+        method: "BAD METHOD"
+
+export:
+  listen_address: 0.0.0.0:9109

@@ -1,0 +1,15 @@
+defaults:
+  interval: 30s
+  timeout: 5s
+
+groups:
+  - name: internet
+    checks:
+      - id: https-with-http-url
+        name: HTTPS With HTTP URL
+        kind: https
+        scope: internet
+        url: http://example.com/health
+
+export:
+  listen_address: 0.0.0.0:9109

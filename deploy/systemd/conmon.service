@@ -1,0 +1,20 @@
+[Unit]
+Description=Conmon monitoring stack
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@INSTALL_ROOT@
+Environment=CONMON_CONFIG_FILE=@CONFIG_FILE@
+Environment=CONMON_DATA_DIR=@DATA_DIR@
+Environment=CONMON_IMAGE_TAG=@IMAGE_TAG@
+ExecStart=docker compose -f deploy/docker-compose.yml up -d --build
+ExecReload=docker compose -f deploy/docker-compose.yml up -d --build
+ExecStop=docker compose -f deploy/docker-compose.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

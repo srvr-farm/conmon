@@ -1,0 +1,9 @@
+.superpowers/
+bin/
+dist/
+.env
+prometheus-data/
+grafana-data/
+build/
+.tmp/
+docs

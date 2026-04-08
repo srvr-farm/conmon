@@ -1,0 +1,81 @@
+defaults:
+  interval: 30s
+  timeout: 5s
+  dns:
+    server: 1.1.1.1
+  tls:
+    min_days_remaining: 21
+  labels:
+    " site ": " home-lab "
+    env: " lab "
+
+groups:
+  - name: internet
+    checks:
+      - id: internet-gateway-ping
+        name: Gateway Reachability
+        kind: icmp
+        scope: internet
+        host: 1.1.1.1
+        count: 3
+
+      - id: internet-web
+        name: Public Web Check
+        kind: https
+        scope: internet
+        url: https://example.com/health
+        method: GET
+        interval: 15s
+        timeout: 3s
+        expected_status: [200, 204, 499]
+        headers:
+          User-Agent: conmon
+        tls_server_name: example.com
+        labels:
+          " site ": " edge-lab "
+          env: " edge "
+          team: " network "
+
+  - name: external-services
+    checks:
+      - id: api-example
+        name: Example API
+        kind: tcp
+        scope: external
+        host: api.example.com
+        port: 443
+
+      - id: external-dns
+        name: Public DNS Resolver
+        kind: dns
+        scope: external
+        query_name: example.com
+        record_type: A
+        expected_rcode: NOERROR
+
+      - id: external-cert
+        name: Example Certificate
+        kind: tls
+        scope: external
+        host: example.com
+        port: 443
+        server_name: example.com
+        min_days_remaining: 14
+
+  - name: internal-services
+    checks:
+      - id: internal-http-default-status
+        name: Internal Default Status
+        kind: http
+        scope: internal
+        url: http://internal-default.local/health
+
+      - id: internal-http
+        name: Internal App
+        kind: http
+        scope: internal
+        url: http://internal-app.local/health
+        expected_status: [200]
+
+export:
+  listen_address: 0.0.0.0:9109

@@ -1,0 +1,11 @@
+groups:
+  - name: internal-services
+    checks:
+      - id: http-missing-url
+        name: HTTP Missing URL
+        kind: http
+        scope: internal
+        expected_status: [200]
+
+export:
+  listen_address: 0.0.0.0:9109
