@@ -6,3 +6,4 @@ prometheus-data/
 grafana-data/
 build/
 .tmp/
+docs
