@@ -7,7 +7,7 @@ Conmon is a self-hosted connectivity monitoring project intended to run as a sma
 - a local Grafana instance for dashboards
 - a host `systemd` unit, `conmon.service`, that manages the Docker Compose stack
 
-This branch implements the operator layer for that architecture: build targets, install and uninstall flow, Docker Compose assets, Prometheus scrape config, Grafana provisioning, and a `systemd` unit template. The long-running probe engine, metrics exporter, and populated dashboards are still future work. Today the Go entrypoint accepts `-config` and exits after constructing the app shell; it does not yet load the YAML config, run checks, bind a metrics listener, or keep the `conmon` container alive. The documentation below is written to be exact about that current state.
+This branch implements the operator layer and the current runtime for that architecture: build targets, install and uninstall flow, Docker Compose assets, Prometheus scrape config, Grafana provisioning, supported probe execution, and a `systemd` unit template. The documentation below is written to match the current repository state.
 
 ## Overview
 
@@ -26,18 +26,19 @@ The following pieces are implemented in this worktree right now:
 
 - config schema types and validation rules in `internal/config`
 - a buildable Go binary at `cmd/conmon`
+- a long-running `conmon` process that loads config, runs supported probes, and exposes Prometheus metrics
 - a Dockerfile for packaging the binary
 - Make targets for build, install, clean, and uninstall
 - Docker Compose, Prometheus, Grafana, and systemd deployment assets
+- an installed Grafana admin helper script for one-time manual credential setup
 
 The following pieces are not implemented yet:
 
-- scheduled probe execution
-- Prometheus metric export from the `conmon` process
-- a long-running `conmon` process that stays up inside the container
-- dashboard population with real data
+- runtime support for `http` and `tcp` probe kinds
+- alerting and notification delivery
+- a more advanced Grafana dashboard than the starter view
 
-Operational consequence: after install, Prometheus and Grafana can be started as part of the stack layout, but Prometheus will not successfully scrape `conmon` yet and the Grafana panels will stay empty until the runtime work lands.
+Operational consequence: after install, the stack comes up and Prometheus can scrape `conmon`. Grafana now requires login by default. The operator must run the installed Grafana admin helper once to set the desired admin username and password before exposing Grafana through a reverse proxy.
 
 ## Architecture
 
@@ -57,7 +58,7 @@ This means the service manages the stack as a unit. The helper binary installed 
 
 - `conmon`: built from the source tree copied into the install root, mounts the operator config read-only, and is granted `NET_RAW` so the future ICMP probe implementation can run.
 - `prometheus`: scrapes `conmon:9109` on the internal Compose network and stores data in the configured data directory with 90 day retention.
-- `grafana`: provisions a Prometheus datasource and a starter dashboard automatically, then serves the UI on `0.0.0.0:3000` by default.
+- `grafana`: provisions a Prometheus datasource and a starter dashboard automatically, requires login by default, and serves the UI on `0.0.0.0:3000` by default.
 
 ### Network and data flow
 
@@ -93,6 +94,7 @@ The Makefile uses these defaults unless you override them on the command line:
 | `CONFIG_FILE` | `/etc/conmon/config.yml` | Config file mounted into the `conmon` container |
 | `DATA_DIR` | `/var/lib/conmon` | Persistent Prometheus and Grafana state |
 | `BIN_DIR` | `/usr/local/bin` | Install location for the helper binary |
+| `GRAFANA_ADMIN_HELPER` | `/usr/local/bin/conmon-grafana-admin` | Installed Grafana admin bootstrap helper |
 | `SYSTEMD_DIR` | `/etc/systemd/system` | Install location for `conmon.service` |
 | `IMAGE_TAG` | `conmon:local` | Local image tag built by `make build` and used by Compose |
 | `ENABLE_SYSTEMD` | `1` | When `1`, run `systemctl` actions during install and uninstall |
@@ -105,6 +107,7 @@ Exact paths used by the default install:
 - Prometheus data: `/var/lib/conmon/prometheus`
 - Grafana data: `/var/lib/conmon/grafana`
 - helper binary: `/usr/local/bin/conmon`
+- Grafana admin helper: `/usr/local/bin/conmon-grafana-admin`
 - systemd unit: `/etc/systemd/system/conmon.service`
 
 The Compose file itself also honors these environment variables at runtime:
@@ -194,7 +197,8 @@ make install \
    - when `ENABLE_SYSTEMD=1`, verifies that `$(SYSTEMCTL)` is available and tells you to rerun with `ENABLE_SYSTEMD=0` if it is not
 2. Runs `make build`, which compiles `build/conmon` and builds the local Docker image tag.
 3. Creates the install root, config directory, persistent data directories, helper binary directory, and systemd unit directory.
-4. Refreshes the managed application tree in `$(INSTALL_ROOT)` by copying:
+4. When `make install` is run as `root`, sets ownership on the persistent data directories so Prometheus and Grafana can write to them with their container users.
+5. Refreshes the managed application tree in `$(INSTALL_ROOT)` by copying:
    - `Dockerfile`
    - `go.mod`
    - `go.sum`
@@ -203,13 +207,14 @@ make install \
    - `config/`
    - `deploy/`
    - `README.md`
-5. Installs the compiled helper binary to `$(BIN_DIR)/conmon`.
-6. Installs `config/conmon.example.yml` to `$(CONFIG_FILE)` only if the destination file does not already exist.
-7. Preserves an existing `$(CONFIG_FILE)` unchanged if one is already present.
-8. Renders `deploy/systemd/conmon.service` into a temporary file in `$(SYSTEMD_DIR)` and atomically renames it into `$(SYSTEMD_DIR)/conmon.service` after the render completes successfully.
-9. If `ENABLE_SYSTEMD=1`, runs `systemctl daemon-reload`.
-10. If both `ENABLE_SYSTEMD=1` and `START_SERVICE=1`, runs `systemctl enable --now conmon.service`.
-11. If `ENABLE_SYSTEMD=0`, skips all `systemctl` actions but still installs the rendered unit file so the layout can be verified in a temporary directory.
+6. Installs the compiled helper binary to `$(BIN_DIR)/conmon`.
+7. Installs `scripts/conmon-grafana-admin` to `$(GRAFANA_ADMIN_HELPER)`.
+8. Installs `config/conmon.example.yml` to `$(CONFIG_FILE)` only if the destination file does not already exist.
+9. Preserves an existing `$(CONFIG_FILE)` unchanged if one is already present.
+10. Renders `deploy/systemd/conmon.service` into a temporary file in `$(SYSTEMD_DIR)` and atomically renames it into `$(SYSTEMD_DIR)/conmon.service` after the render completes successfully.
+11. If `ENABLE_SYSTEMD=1`, runs `systemctl daemon-reload`.
+12. If both `ENABLE_SYSTEMD=1` and `START_SERVICE=1`, runs `systemctl enable --now conmon.service`.
+13. If `ENABLE_SYSTEMD=0`, skips all `systemctl` actions but still installs the rendered unit file so the layout can be verified in a temporary directory.
 
 Why the source tree is copied into `$(INSTALL_ROOT)` instead of installing only a binary:
 
@@ -223,15 +228,59 @@ To refresh an existing install, run `sudo make install` again. Existing config i
 
 ### What happens today after install
 
-The operator layer is complete, but the application runtime is not. On this branch:
+On this branch:
 
-- Prometheus and Grafana assets are installed correctly
-- the `conmon` image is built correctly
-- the `conmon` container does not stay up because the main program is still only an app shell
-- Prometheus therefore cannot scrape `conmon` successfully yet
-- the Grafana dashboard is provisioned, but it remains empty
+- the stack starts under `conmon.service`
+- `conmon` runs supported `https`, `tls`, `dns`, and `icmp` probes from the installed config
+- Prometheus scrapes `conmon`
+- Grafana starts with the provisioned datasource and dashboard
+- Grafana requires login by default
 
-That behavior is expected given the current repository state. It is not a packaging bug in the Makefile or deployment assets.
+The one manual post-install step for Grafana is setting the admin credentials with the installed helper script.
+
+### Grafana admin setup
+
+After `sudo make install` and after the stack is running, run the installed helper:
+
+```bash
+sudo /usr/local/bin/conmon-grafana-admin
+```
+
+The helper:
+
+- waits for Grafana to become healthy
+- prompts for the desired admin username if `--username` is omitted
+- prompts for the desired admin password if `--password` is omitted
+- uses Grafana's local HTTP API to update the built-in admin account
+
+Example using the generic `admin` username:
+
+```bash
+sudo /usr/local/bin/conmon-grafana-admin --username admin
+```
+
+The actual username is operator-chosen. `admin` is only the example used in this documentation.
+
+If you want to supply everything non-interactively:
+
+```bash
+sudo /usr/local/bin/conmon-grafana-admin \
+  --host http://127.0.0.1:3000 \
+  --username admin \
+  --password 'replace-me'
+```
+
+The helper uses Grafana's default bootstrap admin credentials (`admin` / `admin`) unless you override them. If you need to rerun it after credentials have already been changed, provide the current bootstrap credentials through:
+
+- `--bootstrap-user`
+- `--bootstrap-password`
+
+or the equivalent environment variables:
+
+- `BOOTSTRAP_USER`
+- `BOOTSTRAP_PASSWORD`
+
+This keeps credentials out of the repository, out of the systemd unit, and out of Compose configuration. It also fits a reverse-proxy deployment where TLS terminates at the proxy and the proxy forwards to Grafana's local HTTP endpoint.
 
 ## Uninstall
 
@@ -651,6 +700,7 @@ On this branch the dashboard is provisioned correctly, but the panels remain emp
 - `deploy/grafana/provisioning/dashboards/dashboard.yml`: dashboard provider provisioning
 - `deploy/grafana/dashboards/conmon-overview.json`: starter Grafana dashboard
 - `deploy/systemd/conmon.service`: systemd unit template rendered by `make install`
+- `scripts/conmon-grafana-admin`: installed Grafana admin bootstrap helper
 
 ## Summary
 
@@ -661,4 +711,4 @@ This branch gives conmon a concrete operator surface:
 - you can uninstall the managed artifacts safely without deleting config or data
 - you can review the full config schema and the expected deployment layout
 
-What is still missing is the runtime that turns that operator surface into live probe telemetry.
+What is still missing is broader probe-kind coverage, alerting, and a richer dashboard, not the basic runtime path.

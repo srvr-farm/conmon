@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GRAFANA_URL="${GRAFANA_URL:-http://127.0.0.1:3000}"
+BOOTSTRAP_USER="${BOOTSTRAP_USER:-admin}"
+BOOTSTRAP_PASSWORD="${BOOTSTRAP_PASSWORD:-admin}"
+USERNAME=""
+PASSWORD=""
+
+usage() {
+  cat <<'EOF'
+Usage: conmon-grafana-admin [--host URL] [--username USERNAME] [--password PASSWORD]
+                            [--bootstrap-user USERNAME] [--bootstrap-password PASSWORD]
+
+Configures the Grafana admin account after the stack is installed.
+
+If --username or --password are omitted, the script prompts interactively.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --host)
+      GRAFANA_URL="$2"
+      shift 2
+      ;;
+    --username)
+      USERNAME="$2"
+      shift 2
+      ;;
+    --password)
+      PASSWORD="$2"
+      shift 2
+      ;;
+    --bootstrap-user)
+      BOOTSTRAP_USER="$2"
+      shift 2
+      ;;
+    --bootstrap-password)
+      BOOTSTRAP_PASSWORD="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'Unknown argument: %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+prompt_if_missing() {
+  if [[ -z "$USERNAME" ]]; then
+    read -r -p "Admin username: " USERNAME
+  fi
+  if [[ -z "$PASSWORD" ]]; then
+    read -r -s -p "Admin password: " PASSWORD
+    printf '\n'
+  fi
+}
+
+require_commands() {
+  command -v curl >/dev/null 2>&1 || {
+    printf 'curl is required\n' >&2
+    exit 1
+  }
+  command -v python3 >/dev/null 2>&1 || {
+    printf 'python3 is required\n' >&2
+    exit 1
+  }
+}
+
+wait_for_grafana() {
+  local tries=30
+  local i
+  for ((i = 1; i <= tries; i++)); do
+    if curl -fsS "${GRAFANA_URL}/api/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  printf 'Grafana did not become ready at %s\n' "$GRAFANA_URL" >&2
+  exit 1
+}
+
+api() {
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+
+  if [[ -n "$body" ]]; then
+    curl -fsS \
+      -u "${BOOTSTRAP_USER}:${BOOTSTRAP_PASSWORD}" \
+      -X "$method" \
+      -H 'Content-Type: application/json' \
+      -d "$body" \
+      "${GRAFANA_URL}${path}"
+  else
+    curl -fsS \
+      -u "${BOOTSTRAP_USER}:${BOOTSTRAP_PASSWORD}" \
+      -X "$method" \
+      "${GRAFANA_URL}${path}"
+  fi
+}
+
+main() {
+  require_commands
+  prompt_if_missing
+
+  if [[ -z "$USERNAME" || -z "$PASSWORD" ]]; then
+    printf 'Username and password are required\n' >&2
+    exit 1
+  fi
+
+  wait_for_grafana
+
+  local current_user
+  local update_payload
+  local password_payload
+
+  current_user="$(api GET /api/users/1)"
+  update_payload="$(python3 - <<'PY' "$current_user" "$USERNAME"
+import json
+import sys
+
+user = json.loads(sys.argv[1])
+requested = sys.argv[2]
+
+payload = {
+    "name": requested,
+    "login": requested,
+    "email": f"{requested}@localhost.invalid",
+    "theme": user.get("theme", ""),
+}
+print(json.dumps(payload))
+PY
+)"
+  password_payload="$(python3 - <<'PY' "$PASSWORD"
+import json
+import sys
+
+print(json.dumps({"password": sys.argv[1]}))
+PY
+)"
+
+  api PUT /api/users/1 "$update_payload" >/dev/null
+  api PUT /api/admin/users/1/password "$password_payload" >/dev/null
+
+  curl -fsS -u "${USERNAME}:${PASSWORD}" "${GRAFANA_URL}/api/user" >/dev/null
+  printf 'Grafana admin account configured for %s at %s\n' "$USERNAME" "$GRAFANA_URL"
+}
+
+main "$@"

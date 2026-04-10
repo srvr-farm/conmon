@@ -25,10 +25,11 @@ type Probe struct {
 }
 
 func New(check config.Check, options Options) *Probe {
+	now := clockNow(options.Now)
 	return &Probe{
 		check:  check,
-		config: buildTLSConfig(check, options.RootCAs),
-		now:    clockNow(options.Now),
+		config: buildTLSConfig(check, options.RootCAs, now),
+		now:    now,
 	}
 }
 
@@ -68,9 +69,10 @@ func (p *Probe) Run(ctx context.Context) (outcome result.Result) {
 	return outcome
 }
 
-func buildTLSConfig(check config.Check, rootCAs *x509.CertPool) *tls.Config {
+func buildTLSConfig(check config.Check, rootCAs *x509.CertPool, now func() time.Time) *tls.Config {
 	config := &tls.Config{
 		RootCAs: rootCAs,
+		Time:    now,
 	}
 	if check.ServerName != "" {
 		config.ServerName = check.ServerName

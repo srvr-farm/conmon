@@ -16,13 +16,18 @@ CONFIG_FILE ?= $(CONFIG_DIR)/config.yml
 DATA_DIR ?= /var/lib/conmon
 BIN_DIR ?= /usr/local/bin
 HELPER_BIN ?= $(BIN_DIR)/conmon
+GRAFANA_ADMIN_HELPER ?= $(BIN_DIR)/conmon-grafana-admin
 SYSTEMD_DIR ?= /etc/systemd/system
 UNIT_FILE ?= $(SYSTEMD_DIR)/conmon.service
 
 ENABLE_SYSTEMD ?= 1
 START_SERVICE ?= 1
+PROMETHEUS_UID ?= 65534
+PROMETHEUS_GID ?= 65534
+GRAFANA_UID ?= 472
+GRAFANA_GID ?= 472
 
-APP_TREE_ITEMS := Dockerfile go.mod go.sum cmd internal config deploy README.md
+APP_TREE_ITEMS := Dockerfile go.mod go.sum cmd internal config deploy scripts README.md
 
 define require_safe_rm_path
 case "$(strip $(1))" in ""|"/"|"."|"..") printf '%s\n' "Refusing destructive operation with $(2)=$(strip $(1)). Choose a non-empty path that is not /, . or .." >&2; exit 1;; esac
@@ -46,11 +51,16 @@ preflight-install:
 
 install: preflight-install build
 	mkdir -p "$(INSTALL_ROOT)" "$(CONFIG_DIR)" "$(DATA_DIR)/prometheus" "$(DATA_DIR)/grafana" "$(BIN_DIR)" "$(SYSTEMD_DIR)"
-	for path in Dockerfile go.mod go.sum README.md cmd internal config deploy; do \
+	if [ "$$(id -u)" = "0" ]; then \
+		chown -R "$(PROMETHEUS_UID):$(PROMETHEUS_GID)" "$(DATA_DIR)/prometheus"; \
+		chown -R "$(GRAFANA_UID):$(GRAFANA_GID)" "$(DATA_DIR)/grafana"; \
+	fi
+	for path in Dockerfile go.mod go.sum README.md cmd internal config deploy scripts; do \
 		rm -rf "$(INSTALL_ROOT)/$$path"; \
 	done
 	tar -C . -cf - $(APP_TREE_ITEMS) | tar -C "$(INSTALL_ROOT)" -xf -
 	$(INSTALL) -m 0755 "$(BINARY)" "$(HELPER_BIN)"
+	$(INSTALL) -m 0755 scripts/conmon-grafana-admin "$(GRAFANA_ADMIN_HELPER)"
 	if [ ! -e "$(CONFIG_FILE)" ]; then \
 		$(INSTALL) -m 0644 config/conmon.example.yml "$(CONFIG_FILE)"; \
 	else \
@@ -96,6 +106,7 @@ uninstall: preflight-uninstall
 	fi
 	rm -rf "$(INSTALL_ROOT)"
 	rm -f "$(HELPER_BIN)"
+	rm -f "$(GRAFANA_ADMIN_HELPER)"
 	printf '%s\n' "Preserved $(CONFIG_FILE) and $(DATA_DIR)"
 
 preflight-clean:
