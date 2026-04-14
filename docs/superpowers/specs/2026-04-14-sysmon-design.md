@@ -120,7 +120,7 @@ services:
 #### `identity`
 
 - `host`: optional override for the emitted `host` label
-- if empty, `sysmon` resolves the local hostname from the operating system and uses that value
+- if empty or omitted, `sysmon` resolves the local hostname from the operating system and uses that value
 
 #### `system`
 
@@ -140,7 +140,6 @@ services:
 - `push.interval` is not greater than zero
 - `push.timeout` is not greater than zero
 - `push.job` is empty after trimming
-- `identity.host` is present but empty after trimming
 - a service name is empty
 - a service name is duplicated
 
