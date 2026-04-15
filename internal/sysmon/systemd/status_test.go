@@ -50,9 +50,19 @@ func TestEnabledFromUnitFileState(t *testing.T) {
 	})
 }
 
+func TestEnabledFromUnitFileStateRuntimeVariants(t *testing.T) {
+	for _, state := range []string{"enabled-runtime", "linked-runtime"} {
+		t.Run(state, func(t *testing.T) {
+			if !EnabledFromUnitFileState(state) {
+				t.Fatalf("%s should count as enabled", state)
+			}
+		})
+	}
+}
+
 func TestKnownStateValues(t *testing.T) {
 	values := KnownStateValues()
-	expected := []string{"active", "inactive", "failed", "activating", "deactivating"}
+	expected := []string{"active", "inactive", "failed", "activating", "deactivating", "reloading"}
 	if len(values) != len(expected) {
 		t.Fatalf("KnownStateValues length = %d, want %d", len(values), len(expected))
 	}
@@ -60,6 +70,37 @@ func TestKnownStateValues(t *testing.T) {
 		if values[i] != expected[i] {
 			t.Fatalf("value[%d] = %q, want %q", i, values[i], expected[i])
 		}
+	}
+}
+
+func TestParseStatusActiveStateNormalization(t *testing.T) {
+	testCases := []struct {
+		name        string
+		activeState string
+		wantActive  bool
+		wantState   string
+	}{
+		{name: "active", activeState: "active", wantActive: true, wantState: "active"},
+		{name: "activating", activeState: "  Activating  ", wantActive: false, wantState: "activating"},
+		{name: "reloading", activeState: "Reloading", wantActive: false, wantState: "reloading"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, err := ParseStatus([]byte(strings.Join([]string{
+				"Id=test.service",
+				"ActiveState=" + tc.activeState,
+			}, "\n")))
+			if err != nil {
+				t.Fatalf("ParseStatus returned error: %v", err)
+			}
+			if got := status.Active; got != tc.wantActive {
+				t.Fatalf("Active = %v, want %v for state %q", got, tc.wantActive, tc.activeState)
+			}
+			if got := status.State; got != tc.wantState {
+				t.Fatalf("State = %q, want %q", got, tc.wantState)
+			}
+		})
 	}
 }
 

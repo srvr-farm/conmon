@@ -38,7 +38,7 @@ func ParseStatus(data []byte) (UnitStatus, error) {
 		case "Id":
 			status.Name = value
 		case "ActiveState":
-			status.State = value
+			status.State = normalizeState(value)
 		case "UnitFileState":
 			status.Enabled = EnabledFromUnitFileState(value)
 		case "ActiveEnterTimestampMonotonic":
@@ -57,20 +57,20 @@ func ParseStatus(data []byte) (UnitStatus, error) {
 	if err := scanner.Err(); err != nil {
 		return UnitStatus{}, err
 	}
-	status.Active = isActiveState(status.State)
+	status.Active = status.State == "active"
 	return status, nil
 }
 
 // KnownStateValues returns the set of stable states sysmon exposes.
 func KnownStateValues() []string {
-	return []string{"active", "inactive", "failed", "activating", "deactivating"}
+	return []string{"active", "inactive", "failed", "activating", "deactivating", "reloading"}
 }
 
 // EnabledFromUnitFileState reports whether a unit is enabled from the unit file
 // state reported by systemctl.
 func EnabledFromUnitFileState(state string) bool {
 	switch strings.TrimSpace(strings.ToLower(state)) {
-	case "enabled", "linked":
+	case "enabled", "linked", "enabled-runtime", "linked-runtime":
 		return true
 	default:
 		return false
@@ -97,9 +97,13 @@ func (u UnitStatus) ActiveUptimeSeconds(nowMonotonicUS uint64) float64 {
 
 func isActiveState(state string) bool {
 	switch strings.ToLower(strings.TrimSpace(state)) {
-	case "active", "activating":
+	case "active":
 		return true
 	default:
 		return false
 	}
+}
+
+func normalizeState(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
