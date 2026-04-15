@@ -15,7 +15,11 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 
-	var cfg Config
+	cfg := Config{
+		System: SystemConfig{
+			CollectPerCoreCPU: true,
+		},
+	}
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
