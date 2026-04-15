@@ -10,6 +10,7 @@ scrape_configs:
           - conmon:9109
 
   - job_name: pushgateway
+    honor_labels: true
     metrics_path: /metrics
     static_configs:
       - targets:

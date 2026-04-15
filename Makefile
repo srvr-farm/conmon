@@ -44,6 +44,8 @@ endef
 .PHONY: build build-sysmon install install-sysmon uninstall uninstall-sysmon clean preflight-install preflight-install-sysmon preflight-uninstall preflight-uninstall-sysmon preflight-clean verify-task6-install
 
 verify-task6-install:
+	$(call require_safe_rm_path,$(CURDIR)/.tmp,VERIFY_TMP_ROOT)
+	rm -rf "$(CURDIR)/.tmp"
 	$(MAKE) install \
 	  INSTALL_ROOT="$(CURDIR)/.tmp/central/opt/conmon" \
 	  CONFIG_DIR="$(CURDIR)/.tmp/central/etc/conmon" \
@@ -62,6 +64,13 @@ verify-task6-install:
 	  SYSMON_CONFIG_FILE="$(CURDIR)/.tmp/sysmon/etc/sysmon/config.yml" \
 	  SYSMON_BIN_DIR="$(CURDIR)/.tmp/sysmon/usr/local/bin" \
 	  SYSMON_SYSTEMD_DIR="$(CURDIR)/.tmp/sysmon/etc/systemd/system"
+	test -f "$(CURDIR)/.tmp/sysmon/usr/local/bin/sysmon"
+	test -f "$(CURDIR)/.tmp/sysmon/etc/sysmon/config.yml"
+	test -f "$(CURDIR)/.tmp/sysmon/etc/systemd/system/sysmon.service"
+	if grep -q '@SYSMON_HELPER_BIN@\|@SYSMON_CONFIG_FILE@' "$(CURDIR)/.tmp/sysmon/etc/systemd/system/sysmon.service"; then \
+		printf '%s\n' "Rendered sysmon unit still contains unresolved placeholders" >&2; \
+		exit 1; \
+	fi
 
 build: $(BINARY)
 	$(DOCKER) build --tag $(IMAGE_TAG) .
