@@ -39,7 +39,7 @@ The following pieces are not implemented yet:
 - alerting and notification delivery
 - a more advanced Grafana dashboard than the starter view
 
-Operational consequence: after install, the stack comes up and Prometheus can scrape `conmon`. Grafana now requires login by default. The operator must run the installed Grafana admin helper once to set the desired admin username and password before exposing Grafana through a reverse proxy.
+Operational consequence: after install the stack comes up, Prometheus scrapes `conmon` as well as the Pushgateway job for remote `sysmon` metrics, and Grafana requires login by default. The operator must run the installed Grafana admin helper once to set the desired admin username and password before exposing Grafana through a reverse proxy.
 
 ## Architecture
 
@@ -191,7 +191,7 @@ Exact paths used by the default install:
 - Grafana admin helper: `/usr/local/bin/conmon-grafana-admin`
 - systemd unit: `/etc/systemd/system/conmon.service`
 
-The Compose file itself also honors these environment variables at runtime:
+The Compose file itself honors these environment variables at runtime:
 
 - `CONMON_CONFIG_FILE`
 - `CONMON_DATA_DIR`
@@ -200,7 +200,7 @@ The Compose file itself also honors these environment variables at runtime:
 - `CONMON_GRAFANA_BIND`
 - `CONMON_PUSHGATEWAY_BIND`
 
-The installed systemd unit exports those environment variables so the Compose stack uses the same paths and bindings that were chosen at install time. When you run `docker compose` manually from `$(INSTALL_ROOT)` you can still override the bind variables (`CONMON_METRICS_BIND`, `CONMON_GRAFANA_BIND`, `CONMON_PUSHGATEWAY_BIND`) to temporarily restrict the advertised ports before rerunning `make install`.
+`conmon.service` renders `CONMON_CONFIG_FILE`, `CONMON_DATA_DIR`, and `CONMON_IMAGE_TAG` so the running stack always uses the install-chosen config, data directories, and image tag. The bind variables (`CONMON_METRICS_BIND`, `CONMON_GRAFANA_BIND`, `CONMON_PUSHGATEWAY_BIND`) are not set by default; they remain manual environment overrides you can export before running `docker compose` from `$(INSTALL_ROOT)` or add to the rendered unit if you need to move or restrict the advertised ports without reinstalling.
 
 `CONMON_METRICS_BIND` controls how the `conmon` metrics port is published on the host. By default it is `0.0.0.0:9109:9109`. Set it before running `docker compose` if you want to restrict the bind address or move the host port.
 
