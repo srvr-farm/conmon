@@ -3,9 +3,10 @@ package metrics
 import (
 	"sync"
 
+	"github.com/mcallan/conmon/internal/sysmon/collector"
+	systemd "github.com/mcallan/conmon/internal/sysmon/systemd"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-	"github.com/mcallan/conmon/internal/sysmon/collector"
 )
 
 // ServiceSample captures the state that sysmon exposes for a service on a host.
@@ -114,34 +115,34 @@ func NewExporter() *Exporter {
 
 // UpdateHost records the latest host metrics and boot metadata.
 func (e *Exporter) UpdateHost(host string, hostSample collector.HostSample) {
-    e.mu.Lock()
-    defer e.mu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
-    e.recordHost(host, hostSample)
+	e.recordHost(host, hostSample)
 }
 
 // UpdateServices records per-service metrics and clears stale series.
 func (e *Exporter) UpdateServices(host string, services []ServiceSample) {
-    e.mu.Lock()
-    defer e.mu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
-    serviceSet := make(map[string]struct{})
-    for _, svc := range services {
-        if svc.Name == "" {
-            continue
-        }
-        serviceSet[svc.Name] = struct{}{}
-        e.recordService(host, svc)
-    }
+	serviceSet := make(map[string]struct{})
+	for _, svc := range services {
+		if svc.Name == "" {
+			continue
+		}
+		serviceSet[svc.Name] = struct{}{}
+		e.recordService(host, svc)
+	}
 
-    if prev, ok := e.servicesByHost[host]; ok {
-        for service := range prev {
-            if _, keep := serviceSet[service]; !keep {
-                e.clearServiceSeries(host, service)
-            }
-        }
-    }
-    e.servicesByHost[host] = serviceSet
+	if prev, ok := e.servicesByHost[host]; ok {
+		for service := range prev {
+			if _, keep := serviceSet[service]; !keep {
+				e.clearServiceSeries(host, service)
+			}
+		}
+	}
+	e.servicesByHost[host] = serviceSet
 }
 
 func (e *Exporter) recordHost(host string, sample collector.HostSample) {
@@ -181,9 +182,13 @@ func (e *Exporter) recordService(host string, svc ServiceSample) {
 	e.serviceCPU.With(labels).Set(svc.CPUUsageSecondsTotal)
 	e.serviceMemory.With(labels).Set(float64(svc.MemoryResidentBytes))
 	e.serviceState.DeletePartialMatch(prometheus.Labels{"host": host, "service": svc.Name})
-	if svc.State != "" {
-		stateLabels := prometheus.Labels{"host": host, "service": svc.Name, "state": svc.State}
-		e.serviceState.With(stateLabels).Set(1)
+	for _, state := range systemd.KnownStateValues() {
+		stateLabels := prometheus.Labels{"host": host, "service": svc.Name, "state": state}
+		value := 0.0
+		if svc.State == state {
+			value = 1
+		}
+		e.serviceState.With(stateLabels).Set(value)
 	}
 }
 
@@ -206,5 +211,5 @@ func boolToFloat64(v bool) float64 {
 
 // Gather returns the latest metric families from the exporter registry.
 func (e *Exporter) Gather() ([]*dto.MetricFamily, error) {
-    return e.registry.Gather()
+	return e.registry.Gather()
 }
