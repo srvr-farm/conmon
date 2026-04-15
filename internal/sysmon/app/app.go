@@ -178,6 +178,8 @@ type App struct {
 	monotonicNowUS monotonicNowFunc
 	newTicker      func(time.Duration) ticker
 	logger         *log.Logger
+
+	lastKnownServices map[string]metrics.ServiceSample
 }
 
 func New(cfg *config.Config, lookupHost func() (string, error), opts ...Option) (*App, error) {
@@ -197,15 +199,16 @@ func New(cfg *config.Config, lookupHost func() (string, error), opts ...Option) 
 	}
 
 	app := &App{
-		cfg:            cfg,
-		host:           host,
-		fsys:           os.DirFS("/"),
-		exporter:       metrics.NewExporter(),
-		pusher:         push.New(cfg.Push.URL, cfg.Push.Job),
-		monotonicNowUS: defaultMonotonicNowUS,
-		newTicker:      func(d time.Duration) ticker { return timeTicker{t: time.NewTicker(d)} },
-		logger:         log.New(os.Stderr, "sysmon: ", log.LstdFlags),
-		statusReader:   systemdStatusReader{runner: systemctlRunner{}},
+		cfg:               cfg,
+		host:              host,
+		fsys:              os.DirFS("/"),
+		exporter:          metrics.NewExporter(),
+		pusher:            push.New(cfg.Push.URL, cfg.Push.Job),
+		monotonicNowUS:    defaultMonotonicNowUS,
+		newTicker:         func(d time.Duration) ticker { return timeTicker{t: time.NewTicker(d)} },
+		logger:            log.New(os.Stderr, "sysmon: ", log.LstdFlags),
+		statusReader:      systemdStatusReader{runner: systemctlRunner{}},
+		lastKnownServices: make(map[string]metrics.ServiceSample),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -289,15 +292,18 @@ func (a *App) runOnce(ctx context.Context) error {
 	serviceNames := a.cfg.ServiceNames()
 	serviceSamples := make([]metrics.ServiceSample, 0, len(serviceNames))
 	for _, name := range serviceNames {
-		sample := metrics.ServiceSample{Name: name}
-
 		status, err := a.statusReader.Status(cycleCtx, name)
 		if err != nil {
 			a.logger.Printf("systemd status failed service=%s: %v", name, err)
-			serviceSamples = append(serviceSamples, sample)
+			// Preserve last known-good exported values rather than exporting
+			// synthetic zeros for a transient observation failure.
+			if prev, ok := a.lastKnownServices[name]; ok {
+				serviceSamples = append(serviceSamples, prev)
+			}
 			continue
 		}
 
+		sample := metrics.ServiceSample{Name: name}
 		sample.Name = name
 		sample.State = status.State
 		sample.Active = status.Active
@@ -316,6 +322,7 @@ func (a *App) runOnce(ctx context.Context) error {
 			}
 		}
 
+		a.lastKnownServices[name] = sample
 		serviceSamples = append(serviceSamples, sample)
 	}
 	a.exporter.UpdateServices(a.host, serviceSamples)
