@@ -68,6 +68,84 @@ This means the service manages the stack as a unit. The helper binary installed 
 - Prometheus data persists under `$(DATA_DIR)/prometheus`.
 - Grafana data persists under `$(DATA_DIR)/grafana`.
 
+## Central stack with Pushgateway
+
+The Compose stack now ships its own `pushgateway` service (`docker.io/prom/pushgateway:v1.8.0`) alongside `conmon`, `prometheus`, and `grafana`. It joins the `conmon` network, exposes `/metrics` on port `9091` inside the bridge, and publishes that port to the host via `CONMON_PUSHGATEWAY_BIND` (default `0.0.0.0:9092:9091`). Remote hosts push their collected metrics into the gateway, so the service is the only part of the stack that must be reachable from outside the Compose network.
+
+Prometheus scrapes both the `conmon` job and the `pushgateway` job defined in `deploy/prometheus/prometheus.yml`. The pushgateway job sets `honor_labels: true`, which preserves whichever `host` label the remote `sysmon` agent grouped its metrics with, and `sysmon` pushes using the configured `push.url`, `push.job` (default `sysmon`), and a `host` grouping so that each monitored host remains distinguishable even when many systems push into the same gateway.
+
+## Remote sysmon host daemon
+
+`sysmon` is a standalone host daemon built from `cmd/sysmon`/`internal/sysmon`. It runs directly on each monitored machine, continuously gathers host and service statistics, and pushes them to the central Pushgateway instead of running inside the Compose stack. That keeps `conmon.service` focused on controlling the Docker stack while letting remote hosts export their own state to Prometheus.
+
+### Install targets and lifecycle
+
+- `make install` still builds `cmd/conmon`, copies the repository under `$(INSTALL_ROOT)`, and renders `deploy/systemd/conmon.service` so the stack (`conmon`, `pushgateway`, `prometheus`, `grafana`) runs inside Compose.
+- `make build-sysmon` compiles `cmd/sysmon`, and `make install-sysmon` installs the resulting helper binary into `SYSMON_BIN_DIR` (default `/usr/local/bin`), seeds `config/sysmon.example.yml` into `SYSMON_CONFIG_FILE` (`/etc/sysmon/config.yml` by default when the file is absent), renders `deploy/systemd/sysmon.service` (substituting `SYSMON_HELPER_BIN` and the config path), creates `SYSMON_CONFIG_DIR`/`SYSMON_SYSTEMD_DIR`, and optionally enables/starts `sysmon.service` when `ENABLE_SYSTEMD=1` and `START_SERVICE=1`.
+- `make uninstall-sysmon` disables/stops `sysmon.service`, removes the helper binary, and leaves `SYSMON_CONFIG_FILE` untouched so the host identity and Pushgateway settings survive reinstall.
+
+These installation flows are disjoint: `make install` only affects the central Compose assets, and `make install-sysmon` only touches the remote host helper, config, and service. All of the `SYSMON_*` layout variables used by the target mirror the central install variables and can be overridden during verification or packaging.
+
+### Host labels and configuration
+
+`sysmon` loads a YAML configuration document (default `/etc/sysmon/config.yml`). An example config looks like:
+
+```yaml
+push:
+  url: http://monitoring-gateway.lan:9092/metrics
+  job: sysmon
+  interval: 30s
+  timeout: 5s
+
+identity:
+  host: edge-a
+
+system:
+  collect_per_core_cpu: true
+
+services:
+  - name: sshd.service
+  - name: docker.service
+```
+
+`push.url` must point to the Compose host's Pushgateway endpoint (default `http://<central-host>:9092/metrics` based on `CONMON_PUSHGATEWAY_BIND`). `push.job` controls the job label that lands in Prometheus, and `identity.host` overrides the `host` label that `sysmon` groups its pushes with. Leaving `identity.host` empty causes the agent to call `os.Hostname`, but when you need consistent host labels in dashboards you can supply an alias (whitespace is trimmed). The `services` list whitelists which systemd units are monitored, and `system.collect_per_core_cpu` enables per-core CPU gauges in addition to the aggregated view.
+
+Prometheus' `pushgateway` job honors the `host` label sent by the agent, so dashboards keyed by host can rely on whatever override you provide rather than the raw hostname.
+
+### Remote install commands
+
+Run `sudo make install-sysmon` on each monitored host to install the helper binary, default config, and `sysmon.service`. By default the target enables and starts the service, but when you are verifying or packaging with a non-root tree you can run:
+
+```bash
+make install-sysmon \
+  SYSMON_CONFIG_DIR="$PWD/.tmp/sysmon/etc/sysmon" \
+  SYSMON_CONFIG_FILE="$PWD/.tmp/sysmon/etc/sysmon/config.yml" \
+  SYSMON_BIN_DIR="$PWD/.tmp/sysmon/usr/local/bin" \
+  SYSMON_SYSTEMD_DIR="$PWD/.tmp/sysmon/etc/systemd/system" \
+  ENABLE_SYSTEMD=0 \
+  START_SERVICE=0
+```
+
+That command renders the unit and config under `.tmp/sysmon` without touching systemd. When you are ready to remove the daemon:
+
+```bash
+sudo make uninstall-sysmon
+```
+
+or, for the non-root layout,
+
+```bash
+make uninstall-sysmon \
+  SYSMON_CONFIG_DIR="$PWD/.tmp/sysmon/etc/sysmon" \
+  SYSMON_CONFIG_FILE="$PWD/.tmp/sysmon/etc/sysmon/config.yml" \
+  SYSMON_BIN_DIR="$PWD/.tmp/sysmon/usr/local/bin" \
+  SYSMON_SYSTEMD_DIR="$PWD/.tmp/sysmon/etc/systemd/system" \
+  ENABLE_SYSTEMD=0 \
+  START_SERVICE=0
+```
+
+The uninstall target leaves `SYSMON_CONFIG_FILE` untouched so you can reuse the same Pushgateway URL and host alias after reinstalling.
+
 ## Prerequisites
 
 You need the following on the target host:
