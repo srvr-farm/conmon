@@ -1,0 +1,14 @@
+push:
+  url: http://pushgateway.lan:9091/metrics
+  interval: 30s
+  timeout: 5s
+
+identity:
+  host: ""
+
+system:
+  collect_per_core_cpu: true
+
+services:
+  - name: docker.service
+  - name: sshd.service
