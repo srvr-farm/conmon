@@ -1,0 +1,13 @@
+[Unit]
+Description=Sysmon host monitoring agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@SYSMON_HELPER_BIN@ -config @SYSMON_CONFIG_FILE@
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

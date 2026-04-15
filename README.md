@@ -4,6 +4,7 @@ Conmon is a self-hosted connectivity monitoring project intended to run as a sma
 
 - a `conmon` container built from this repository
 - a local Prometheus instance for time-series storage
+- a Pushgateway service that receives remote `sysmon` pushes
 - a local Grafana instance for dashboards
 - a host `systemd` unit, `conmon.service`, that manages the Docker Compose stack
 
@@ -38,7 +39,7 @@ The following pieces are not implemented yet:
 - alerting and notification delivery
 - a more advanced Grafana dashboard than the starter view
 
-Operational consequence: after install, the stack comes up and Prometheus can scrape `conmon`. Grafana now requires login by default. The operator must run the installed Grafana admin helper once to set the desired admin username and password before exposing Grafana through a reverse proxy.
+Operational consequence: after install the stack comes up, Prometheus scrapes `conmon` as well as the Pushgateway job for remote `sysmon` metrics, and Grafana requires login by default. The operator must run the installed Grafana admin helper once to set the desired admin username and password before exposing Grafana through a reverse proxy.
 
 ## Architecture
 
@@ -54,9 +55,10 @@ This means the service manages the stack as a unit. The helper binary installed 
 
 ### Containers
 
-`deploy/docker-compose.yml` defines three services:
+`deploy/docker-compose.yml` defines four services:
 
 - `conmon`: built from the source tree copied into the install root, mounts the operator config read-only, and is granted `NET_RAW` so the future ICMP probe implementation can run.
+- `pushgateway`: runs `docker.io/prom/pushgateway:v1.8.0`, exposes `/metrics` to the internal bridge and publishes a host port so remote `sysmon` agents can push their series without joining the Compose network.
 - `prometheus`: scrapes `conmon:9109` on the internal Compose network and stores data in the configured data directory with 90 day retention.
 - `grafana`: provisions a Prometheus datasource and a starter dashboard automatically, requires login by default, and serves the UI on `0.0.0.0:3000` by default.
 
@@ -65,8 +67,87 @@ This means the service manages the stack as a unit. The helper binary installed 
 - Prometheus is bound to `127.0.0.1:9091`.
 - Grafana is bound to `0.0.0.0:3000` by default.
 - The `conmon` metrics endpoint is published on the host as `0.0.0.0:9109` by default and is also reachable on the internal Compose network at `conmon:9109`.
+- Pushgateway publishes the host endpoint defined by `CONMON_PUSHGATEWAY_BIND` (default `0.0.0.0:9092:9091`) so remote `sysmon` agents can push into the stack while Prometheus scrapes the gateway internally at `pushgateway:9091`.
 - Prometheus data persists under `$(DATA_DIR)/prometheus`.
 - Grafana data persists under `$(DATA_DIR)/grafana`.
+
+## Central stack with Pushgateway
+
+The Compose stack now ships its own `pushgateway` service (`docker.io/prom/pushgateway:v1.8.0`) alongside `conmon`, `prometheus`, and `grafana`. It joins the `conmon` network, exposes `/metrics` on port `9091` inside the bridge, and publishes that port to the host via `CONMON_PUSHGATEWAY_BIND` (default `0.0.0.0:9092:9091`). Remote hosts push their collected metrics into the gateway, so the service is the only part of the stack that must be reachable from outside the Compose network.
+
+Prometheus scrapes both the `conmon` job and the `pushgateway` job defined in `deploy/prometheus/prometheus.yml`. The pushgateway job sets `honor_labels: true`, which preserves whichever `host` label the remote `sysmon` agent grouped its metrics with, and `sysmon` pushes to the configured `push.url` base (default `http://<central-host>:9092`) while automatically appending `/metrics/job/<job>/host/<host>` so every monitored host remains distinguishable even when many systems push into the same gateway. `push.job` (default `sysmon`) and the `host` grouping label are supplied along the way.
+
+## Remote sysmon host daemon
+
+`sysmon` is a standalone host daemon built from `cmd/sysmon`/`internal/sysmon`. It runs directly on each monitored machine, continuously gathers host and service statistics, and pushes them to the central Pushgateway instead of running inside the Compose stack. That keeps `conmon.service` focused on controlling the Docker stack while letting remote hosts export their own state to Prometheus.
+
+### Install targets and lifecycle
+
+- `make install` still builds `cmd/conmon`, copies the repository under `$(INSTALL_ROOT)`, and renders `deploy/systemd/conmon.service` so the stack (`conmon`, `pushgateway`, `prometheus`, `grafana`) runs inside Compose.
+- `make build-sysmon` compiles `cmd/sysmon`, and `make install-sysmon` installs the resulting helper binary into `SYSMON_BIN_DIR` (default `/usr/local/bin`), seeds `config/sysmon.example.yml` into `SYSMON_CONFIG_FILE` (`/etc/sysmon/config.yml` by default when the file is absent), renders `deploy/systemd/sysmon.service` (substituting `SYSMON_HELPER_BIN` and the config path), creates `SYSMON_CONFIG_DIR`/`SYSMON_SYSTEMD_DIR`, and optionally enables/starts `sysmon.service` when `ENABLE_SYSTEMD=1` and `START_SERVICE=1`.
+- `make uninstall-sysmon` disables/stops `sysmon.service`, removes the helper binary, and leaves `SYSMON_CONFIG_FILE` untouched so the host identity and Pushgateway settings survive reinstall.
+
+These installation flows are disjoint: `make install` only affects the central Compose assets, and `make install-sysmon` only touches the remote host helper, config, and service. All of the `SYSMON_*` layout variables used by the target mirror the central install variables and can be overridden during verification or packaging.
+
+### Host labels and configuration
+
+`sysmon` loads a YAML configuration document (default `/etc/sysmon/config.yml`). An example config looks like:
+
+```yaml
+push:
+  url: http://monitoring-gateway.lan:9092
+  job: sysmon
+  interval: 30s
+  timeout: 5s
+
+identity:
+  host: edge-a
+
+system:
+  collect_per_core_cpu: true
+
+services:
+  - name: sshd.service
+  - name: docker.service
+```
+
+`push.url` must point to the Compose host's Pushgateway base URL (default `http://<central-host>:9092` based on `CONMON_PUSHGATEWAY_BIND`), and `sysmon` automatically appends `/metrics/job/<job>/host/<host>` so the gateway keeps each host's series distinct. `push.job` controls the job label that lands in Prometheus, and `identity.host` overrides the `host` label that `sysmon` groups its pushes with. Leaving `identity.host` empty causes the agent to call `os.Hostname`, but when you need consistent host labels in dashboards you can supply an alias (whitespace is trimmed). The `services` list whitelists which systemd units are monitored, and `system.collect_per_core_cpu` enables per-core CPU gauges in addition to the aggregated view.
+
+Prometheus' `pushgateway` job honors the `host` label sent by the agent, so dashboards keyed by host can rely on whatever override you provide rather than the raw hostname.
+
+### Remote install commands
+
+Run `sudo make install-sysmon` on each monitored host to install the helper binary, default config, and `sysmon.service`. By default the target enables and starts the service, but when you are verifying or packaging with a non-root tree you can run:
+
+```bash
+make install-sysmon \
+  SYSMON_CONFIG_DIR="$PWD/.tmp/sysmon/etc/sysmon" \
+  SYSMON_CONFIG_FILE="$PWD/.tmp/sysmon/etc/sysmon/config.yml" \
+  SYSMON_BIN_DIR="$PWD/.tmp/sysmon/usr/local/bin" \
+  SYSMON_SYSTEMD_DIR="$PWD/.tmp/sysmon/etc/systemd/system" \
+  ENABLE_SYSTEMD=0 \
+  START_SERVICE=0
+```
+
+That command renders the unit and config under `.tmp/sysmon` without touching systemd. When you are ready to remove the daemon:
+
+```bash
+sudo make uninstall-sysmon
+```
+
+or, for the non-root layout,
+
+```bash
+make uninstall-sysmon \
+  SYSMON_CONFIG_DIR="$PWD/.tmp/sysmon/etc/sysmon" \
+  SYSMON_CONFIG_FILE="$PWD/.tmp/sysmon/etc/sysmon/config.yml" \
+  SYSMON_BIN_DIR="$PWD/.tmp/sysmon/usr/local/bin" \
+  SYSMON_SYSTEMD_DIR="$PWD/.tmp/sysmon/etc/systemd/system" \
+  ENABLE_SYSTEMD=0 \
+  START_SERVICE=0
+```
+
+The uninstall target leaves `SYSMON_CONFIG_FILE` untouched so you can reuse the same Pushgateway URL and host alias after reinstalling.
 
 ## Prerequisites
 
@@ -110,19 +191,22 @@ Exact paths used by the default install:
 - Grafana admin helper: `/usr/local/bin/conmon-grafana-admin`
 - systemd unit: `/etc/systemd/system/conmon.service`
 
-The Compose file itself also honors these environment variables at runtime:
+The Compose file itself honors these environment variables at runtime:
 
 - `CONMON_CONFIG_FILE`
 - `CONMON_DATA_DIR`
 - `CONMON_IMAGE_TAG`
 - `CONMON_METRICS_BIND`
 - `CONMON_GRAFANA_BIND`
+- `CONMON_PUSHGATEWAY_BIND`
 
-The installed systemd unit sets those environment variables so the Compose stack uses the same paths that were chosen at install time.
+`conmon.service` renders `CONMON_CONFIG_FILE`, `CONMON_DATA_DIR`, and `CONMON_IMAGE_TAG` so the running stack always uses the install-chosen config, data directories, and image tag. The bind variables (`CONMON_METRICS_BIND`, `CONMON_GRAFANA_BIND`, `CONMON_PUSHGATEWAY_BIND`) are not set by default; they remain manual environment overrides you can export before running `docker compose` from `$(INSTALL_ROOT)` or add to the rendered unit if you need to move or restrict the advertised ports without reinstalling.
 
-`CONMON_METRICS_BIND` controls how the `conmon` metrics port is published on the host. By default it is `0.0.0.0:9109:9109`. You can override it before running `docker compose` if you want to restrict the bind address or move the host port.
+`CONMON_METRICS_BIND` controls how the `conmon` metrics port is published on the host. By default it is `0.0.0.0:9109:9109`. Set it before running `docker compose` if you want to restrict the bind address or move the host port.
 
-`CONMON_GRAFANA_BIND` controls how the Grafana UI is published on the host. By default it is `0.0.0.0:3000:3000`. You can override it before running `docker compose` if you want to restrict the bind address or move the host port.
+`CONMON_GRAFANA_BIND` controls how the Grafana UI is published on the host. By default it is `0.0.0.0:3000:3000`. Set it before running `docker compose` if you want to restrict the bind address or move the host port.
+
+`CONMON_PUSHGATEWAY_BIND` controls how Pushgateway publishes its HTTP endpoint. By default it is `0.0.0.0:9092:9091`. Override it when you want to expose the gateway on a different interface or port without changing the rest of the stack.
 
 ## Local Development Build
 
@@ -232,7 +316,7 @@ On this branch:
 
 - the stack starts under `conmon.service`
 - `conmon` runs supported `https`, `tls`, `dns`, and `icmp` probes from the installed config
-- Prometheus scrapes `conmon`
+- Prometheus scrapes both `conmon` and the central `pushgateway` job so remote hosts surface through Pushgateway's job/host grouping
 - Grafana starts with the provisioned datasource and dashboard
 - Grafana requires login by default
 

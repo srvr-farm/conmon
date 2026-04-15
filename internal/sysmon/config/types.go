@@ -4,6 +4,9 @@ import (
 	"github.com/mcallan/conmon/internal/config"
 )
 
+// Duration is a convenience alias for the shared duration wrapper used in sysmon
+// configuration.
+type Duration = config.Duration
 type Config struct {
 	Push     PushConfig     `yaml:"push"`
 	Identity IdentityConfig `yaml:"identity"`
