@@ -1,0 +1,21 @@
+# sysmon configuration example
+
+push:
+  # URL of the Pushgateway that collects the host metrics
+  url: http://monitoring-gateway.lan:9092
+  job: sysmon
+  interval: 30s
+  timeout: 5s
+
+identity:
+  # Override the host label that sysmon pushes. Leave empty to default to the hostname.
+  host: ""
+
+system:
+  # Emit per-core CPU metrics in addition to the aggregated host view.
+  collect_per_core_cpu: true
+
+services:
+  # Whitelisted systemd units to monitor.
+  - name: sshd.service
+  - name: docker.service

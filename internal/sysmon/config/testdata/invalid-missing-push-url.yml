@@ -1,0 +1,13 @@
+push:
+  job: sysmon
+  interval: 30s
+  timeout: 5s
+
+identity:
+  host: ""
+
+system:
+  collect_per_core_cpu: true
+
+services:
+  - name: sshd.service
