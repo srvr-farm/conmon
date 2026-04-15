@@ -38,3 +38,9 @@ func TestPusherReturnsErrorOnBadResponses(t *testing.T) {
     }
 }
 
+func TestPusherReturnsErrorOnNetworkFailure(t *testing.T) {
+    pusher := New("http://localhost:1", "sysmon")
+    if err := pusher.Push(context.Background(), "edge-a", prometheus.NewRegistry()); err == nil {
+        t.Fatal("expected error when Pushgateway unreachable")
+    }
+}

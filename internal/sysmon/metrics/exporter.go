@@ -38,6 +38,7 @@ type Exporter struct {
 	mu             sync.Mutex
 	servicesByHost map[string]map[string]struct{}
 	coresByHost    map[string]map[string]struct{}
+	hostBootID     map[string]string
 }
 
 // NewExporter returns a new exporter with all sysmon metric families registered.
@@ -46,6 +47,7 @@ func NewExporter() *Exporter {
 		registry:       prometheus.NewRegistry(),
 		servicesByHost: make(map[string]map[string]struct{}),
 		coresByHost:    make(map[string]map[string]struct{}),
+		hostBootID:     make(map[string]string),
 	}
 
 	exporter.hostCPUUsage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -110,29 +112,36 @@ func NewExporter() *Exporter {
 	return exporter
 }
 
-// UpdateHost records the latest host and service data.
-func (e *Exporter) UpdateHost(host string, hostSample collector.HostSample, services []ServiceSample) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+// UpdateHost records the latest host metrics and boot metadata.
+func (e *Exporter) UpdateHost(host string, hostSample collector.HostSample) {
+    e.mu.Lock()
+    defer e.mu.Unlock()
 
-	e.recordHost(host, hostSample)
-	serviceSet := make(map[string]struct{})
-	for _, svc := range services {
-		if svc.Name == "" {
-			continue
-		}
-		serviceSet[svc.Name] = struct{}{}
-		e.recordService(host, svc)
-	}
+    e.recordHost(host, hostSample)
+}
 
-	if prev, ok := e.servicesByHost[host]; ok {
-		for service := range prev {
-			if _, keep := serviceSet[service]; !keep {
-				e.clearServiceSeries(host, service)
-			}
-		}
-	}
-	e.servicesByHost[host] = serviceSet
+// UpdateServices records per-service metrics and clears stale series.
+func (e *Exporter) UpdateServices(host string, services []ServiceSample) {
+    e.mu.Lock()
+    defer e.mu.Unlock()
+
+    serviceSet := make(map[string]struct{})
+    for _, svc := range services {
+        if svc.Name == "" {
+            continue
+        }
+        serviceSet[svc.Name] = struct{}{}
+        e.recordService(host, svc)
+    }
+
+    if prev, ok := e.servicesByHost[host]; ok {
+        for service := range prev {
+            if _, keep := serviceSet[service]; !keep {
+                e.clearServiceSeries(host, service)
+            }
+        }
+    }
+    e.servicesByHost[host] = serviceSet
 }
 
 func (e *Exporter) recordHost(host string, sample collector.HostSample) {
@@ -140,11 +149,13 @@ func (e *Exporter) recordHost(host string, sample collector.HostSample) {
 	e.hostUptime.With(labels).Set(sample.UptimeSeconds)
 	e.hostMemory.With(labels).Set(float64(sample.MemoryResidentBytes))
 	e.hostCPUUsage.With(labels).Set(sample.TotalCPUUsageRatio)
-	if sample.BootID != "" {
-		e.hostInfo.With(prometheus.Labels{"host": host, "boot_id": sample.BootID}).Set(1)
-	} else {
-		e.hostInfo.With(prometheus.Labels{"host": host, "boot_id": ""}).Set(1)
+	prevBoot, seen := e.hostBootID[host]
+	bootID := sample.BootID
+	if seen && prevBoot != bootID {
+		e.hostInfo.Delete(prometheus.Labels{"host": host, "boot_id": prevBoot})
 	}
+	e.hostBootID[host] = bootID
+	e.hostInfo.With(prometheus.Labels{"host": host, "boot_id": bootID}).Set(1)
 
 	coreSet := make(map[string]struct{})
 	for core, usage := range sample.PerCoreUsageRatio {

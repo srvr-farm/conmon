@@ -18,7 +18,8 @@ func TestExporterEmitsHostAndServiceMetrics(t *testing.T) {
             "cpu0": 0.20,
             "cpu1": 0.30,
         },
-    }, []ServiceSample{
+    })
+    exporter.UpdateServices("edge-a", []ServiceSample{
         {
             Name:                  "docker.service",
             UptimeSeconds:         45,
@@ -30,34 +31,52 @@ func TestExporterEmitsHostAndServiceMetrics(t *testing.T) {
         },
     })
 
-    families, err := exporter.Gather()
-    if err != nil {
-        t.Fatalf("Gather returned error: %v", err)
-    }
+    families := mustGather(t, exporter)
     if !containsMetricFamily(families, "sysmon_host_info") {
         t.Fatal("expected sysmon_host_info")
     }
+    if findMetricWithLabels(families, "sysmon_host_info", map[string]string{"host": "edge-a", "boot_id": "boot-123"}) == nil {
+        t.Fatal("expected host info with boot-123")
+    }
     if findMetricWithLabels(families, "sysmon_service_uptime_seconds", map[string]string{"host": "edge-a", "service": "docker.service"}) == nil {
         t.Fatal("expected sysmon_service_uptime_seconds for docker.service")
+    }
+    if findMetricWithLabels(families, "sysmon_service_state", map[string]string{"host": "edge-a", "service": "docker.service", "state": "active"}) == nil {
+        t.Fatal("expected sysmon_service_state for docker.service/active")
     }
 }
 
 func TestExporterRemovesStaleServiceMetrics(t *testing.T) {
     exporter := NewExporter()
-    exporter.UpdateHost("edge-a", collector.HostSample{}, []ServiceSample{
-        {Name: "docker.service", State: "active", Active: true, Enabled: true},
-    })
+    exporter.UpdateServices("edge-a", []ServiceSample{{Name: "docker.service", State: "active", Active: true, Enabled: true}})
     if findMetricWithLabels(mustGather(t, exporter), "sysmon_service_uptime_seconds", map[string]string{"host": "edge-a", "service": "docker.service"}) == nil {
         t.Fatal("initial docker.service uptime missing")
     }
 
-    exporter.UpdateHost("edge-a", collector.HostSample{}, nil)
+    exporter.UpdateServices("edge-a", nil)
     families := mustGather(t, exporter)
     if findMetricWithLabels(families, "sysmon_service_uptime_seconds", map[string]string{"host": "edge-a", "service": "docker.service"}) != nil {
         t.Fatal("stale docker.service metric still present")
     }
     if findMetricWithLabels(families, "sysmon_service_state", map[string]string{"host": "edge-a", "service": "docker.service"}) != nil {
         t.Fatal("stale docker.service state metric still present")
+    }
+}
+
+func TestExporterClearsStaleHostInfoBoots(t *testing.T) {
+    exporter := NewExporter()
+    exporter.UpdateHost("edge-a", collector.HostSample{BootID: "boot-1"})
+    if findMetricWithLabels(mustGather(t, exporter), "sysmon_host_info", map[string]string{"host": "edge-a", "boot_id": "boot-1"}) == nil {
+        t.Fatal("expected boot-1 host info")
+    }
+
+    exporter.UpdateHost("edge-a", collector.HostSample{BootID: "boot-2"})
+    families := mustGather(t, exporter)
+    if findMetricWithLabels(families, "sysmon_host_info", map[string]string{"host": "edge-a", "boot_id": "boot-1"}) != nil {
+        t.Fatal("stale boot-1 host info still present")
+    }
+    if findMetricWithLabels(families, "sysmon_host_info", map[string]string{"host": "edge-a", "boot_id": "boot-2"}) == nil {
+        t.Fatal("expected boot-2 host info")
     }
 }
 
@@ -113,7 +132,7 @@ func TestExporterPerCoreMetrics(t *testing.T) {
     exporter := NewExporter()
     exporter.UpdateHost("edge-a", collector.HostSample{
         PerCoreUsageRatio: map[string]float64{"cpu0": 0.1},
-    }, nil)
+    })
 
     if findMetricWithLabels(mustGather(t, exporter), "sysmon_host_cpu_core_usage_ratio", map[string]string{"host": "edge-a", "core": "cpu0"}) == nil {
         t.Fatal("expected per-core cpu usage metric")
