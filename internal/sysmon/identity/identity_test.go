@@ -1,6 +1,9 @@
 package identity
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestResolveHostPrefersConfiguredOverride(t *testing.T) {
 	got, err := ResolveHost("edge-a", func() (string, error) { return "ignored", nil })
@@ -9,5 +12,12 @@ func TestResolveHostPrefersConfiguredOverride(t *testing.T) {
 	}
 	if got != "edge-a" {
 		t.Fatalf("ResolveHost = %q, want %q", got, "edge-a")
+	}
+}
+
+func TestResolveHostPropagatesLookupError(t *testing.T) {
+	wantErr := errors.New("lookup failure")
+	if _, err := ResolveHost("", func() (string, error) { return "", wantErr }); !errors.Is(err, wantErr) {
+		t.Fatalf("ResolveHost error = %v, want %v", err, wantErr)
 	}
 }
