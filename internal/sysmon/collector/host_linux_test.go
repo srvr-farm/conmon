@@ -22,6 +22,18 @@ func TestCollectHostSampleParsesProcData(t *testing.T) {
 	if got, want := sample.MemoryResidentBytes, uint64(768000); got != want {
 		t.Fatalf("MemoryResidentBytes = %d, want %d", got, want)
 	}
+	if got, want := sample.BootID, "boot-123"; got != want {
+		t.Fatalf("BootID = %q, want %q", got, want)
+	}
+	if got, want := sample.UptimeSeconds, 120.5; got != want {
+		t.Fatalf("UptimeSeconds = %f, want %f", got, want)
+	}
+	if got := sample.TotalCPUUsageRatio; got != 0 {
+		t.Fatalf("TotalCPUUsageRatio = %f, want 0 on first sample", got)
+	}
+	if sample.PerCoreUsageRatio != nil {
+		t.Fatalf("PerCoreUsageRatio = %#v, want nil on first sample", sample.PerCoreUsageRatio)
+	}
 }
 
 func TestCollectHostSampleCPUUsageRatio(t *testing.T) {
@@ -43,8 +55,15 @@ func TestCollectHostSampleCPUUsageRatio(t *testing.T) {
 	ctx := context.Background()
 	fs := buildFS(initial)
 	collector := NewHostCollector(fs)
-	if _, err := collector.Snapshot(ctx); err != nil {
+	firstSample, err := collector.Snapshot(ctx)
+	if err != nil {
 		t.Fatalf("Snapshot first call returned error: %v", err)
+	}
+	if firstSample.TotalCPUUsageRatio != 0 {
+		t.Fatalf("first sample total ratio = %f, want 0", firstSample.TotalCPUUsageRatio)
+	}
+	if firstSample.PerCoreUsageRatio != nil {
+		t.Fatalf("first sample per-core = %#v, want nil", firstSample.PerCoreUsageRatio)
 	}
 	fs["proc/stat"] = &fstest.MapFile{Data: []byte(second)}
 	sample, err := collector.Snapshot(ctx)

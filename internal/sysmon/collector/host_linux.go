@@ -20,6 +20,9 @@ func (c *HostCollector) Snapshot(ctx context.Context) (HostSample, error) {
 		return HostSample{}, err
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	statData, err := fs.ReadFile(c.fs, "proc/stat")
 	if err != nil {
 		return HostSample{}, err
@@ -159,9 +162,6 @@ func parseUptime(data []byte) (float64, error) {
 }
 
 func (c *HostCollector) computeCPUUsage(curr map[string]cpuSnapshot) (float64, map[string]float64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	cloned := cloneCPUSnapshots(curr)
 	if c.prev == nil {
 		c.prev = cloned
