@@ -178,8 +178,6 @@ type App struct {
 	monotonicNowUS monotonicNowFunc
 	newTicker      func(time.Duration) ticker
 	logger         *log.Logger
-
-	lastServices map[string]metrics.ServiceSample
 }
 
 func New(cfg *config.Config, lookupHost func() (string, error), opts ...Option) (*App, error) {
@@ -207,7 +205,6 @@ func New(cfg *config.Config, lookupHost func() (string, error), opts ...Option) 
 		monotonicNowUS: defaultMonotonicNowUS,
 		newTicker:      func(d time.Duration) ticker { return timeTicker{t: time.NewTicker(d)} },
 		logger:         log.New(os.Stderr, "sysmon: ", log.LstdFlags),
-		lastServices:   make(map[string]metrics.ServiceSample),
 		statusReader:   systemdStatusReader{runner: systemctlRunner{}},
 	}
 	for _, opt := range opts {
@@ -257,26 +254,29 @@ func (a *App) Run(ctx context.Context) error {
 
 	// Run immediately on startup so a freshly started daemon pushes without
 	// waiting a full interval.
-	a.runOnce(ctx)
+	if err := a.runOnce(ctx); err != nil {
+		return err
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-t.C():
-			a.runOnce(ctx)
+			if err := a.runOnce(ctx); err != nil {
+				a.logger.Printf("cycle failed: %v", err)
+			}
 		}
 	}
 }
 
-func (a *App) runOnce(ctx context.Context) {
+func (a *App) runOnce(ctx context.Context) error {
 	cycleCtx, cancel := context.WithTimeout(ctx, a.cfg.Push.Timeout.Duration)
 	defer cancel()
 
 	hostSample, err := a.hostCollector.Snapshot(cycleCtx)
 	if err != nil {
-		a.logger.Printf("host collection failed: %v", err)
-		return
+		return fmt.Errorf("host collection failed: %w", err)
 	}
 	a.exporter.UpdateHost(a.host, hostSample)
 
@@ -289,10 +289,7 @@ func (a *App) runOnce(ctx context.Context) {
 	serviceNames := a.cfg.ServiceNames()
 	serviceSamples := make([]metrics.ServiceSample, 0, len(serviceNames))
 	for _, name := range serviceNames {
-		sample, ok := a.lastServices[name]
-		if !ok {
-			sample = metrics.ServiceSample{Name: name}
-		}
+		sample := metrics.ServiceSample{Name: name}
 
 		status, err := a.statusReader.Status(cycleCtx, name)
 		if err != nil {
@@ -307,7 +304,9 @@ func (a *App) runOnce(ctx context.Context) {
 		sample.Enabled = status.Enabled
 		sample.UptimeSeconds = status.ActiveUptimeSeconds(nowUS)
 
-		if status.ControlGroup != "" {
+		// Only export resource usage from the current cycle. If the service is
+		// inactive, has no cgroup, or the cgroup read fails, CPU/memory stay at 0.
+		if status.Active && status.ControlGroup != "" {
 			usage, err := a.cgroupReader.ReadUsage(status.ControlGroup)
 			if err != nil {
 				a.logger.Printf("cgroup usage failed service=%s control_group=%s: %v", name, status.ControlGroup, err)
@@ -317,12 +316,12 @@ func (a *App) runOnce(ctx context.Context) {
 			}
 		}
 
-		a.lastServices[name] = sample
 		serviceSamples = append(serviceSamples, sample)
 	}
 	a.exporter.UpdateServices(a.host, serviceSamples)
 
 	if err := a.pusher.Push(cycleCtx, a.host, a.exporter); err != nil {
-		a.logger.Printf("push failed: %v", err)
+		return fmt.Errorf("push failed: %w", err)
 	}
+	return nil
 }
