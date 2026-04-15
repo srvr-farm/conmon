@@ -23,7 +23,7 @@ type IdentityConfig struct {
 }
 
 type SystemConfig struct {
-	CollectPerCoreCPU *bool `yaml:"collect_per_core_cpu"`
+	CollectPerCoreCPU bool `yaml:"collect_per_core_cpu"`
 }
 
 type Service struct {

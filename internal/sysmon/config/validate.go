@@ -31,11 +31,6 @@ func (c *Config) Validate() error {
 
 	c.Identity.Host = strings.TrimSpace(c.Identity.Host)
 
-	if c.System.CollectPerCoreCPU == nil {
-		defaultFlag := true
-		c.System.CollectPerCoreCPU = &defaultFlag
-	}
-
 	seen := make(map[string]int, len(c.Services))
 	for i := range c.Services {
 		svc := &c.Services[i]
