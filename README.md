@@ -4,6 +4,7 @@ Conmon is a self-hosted connectivity monitoring project intended to run as a sma
 
 - a `conmon` container built from this repository
 - a local Prometheus instance for time-series storage
+- a Pushgateway service that receives remote `sysmon` pushes
 - a local Grafana instance for dashboards
 - a host `systemd` unit, `conmon.service`, that manages the Docker Compose stack
 
@@ -54,9 +55,10 @@ This means the service manages the stack as a unit. The helper binary installed 
 
 ### Containers
 
-`deploy/docker-compose.yml` defines three services:
+`deploy/docker-compose.yml` defines four services:
 
 - `conmon`: built from the source tree copied into the install root, mounts the operator config read-only, and is granted `NET_RAW` so the future ICMP probe implementation can run.
+- `pushgateway`: runs `docker.io/prom/pushgateway:v1.8.0`, exposes `/metrics` to the internal bridge and publishes a host port so remote `sysmon` agents can push their series without joining the Compose network.
 - `prometheus`: scrapes `conmon:9109` on the internal Compose network and stores data in the configured data directory with 90 day retention.
 - `grafana`: provisions a Prometheus datasource and a starter dashboard automatically, requires login by default, and serves the UI on `0.0.0.0:3000` by default.
 
@@ -65,6 +67,7 @@ This means the service manages the stack as a unit. The helper binary installed 
 - Prometheus is bound to `127.0.0.1:9091`.
 - Grafana is bound to `0.0.0.0:3000` by default.
 - The `conmon` metrics endpoint is published on the host as `0.0.0.0:9109` by default and is also reachable on the internal Compose network at `conmon:9109`.
+- Pushgateway publishes the host endpoint defined by `CONMON_PUSHGATEWAY_BIND` (default `0.0.0.0:9092:9091`) so remote `sysmon` agents can push into the stack while Prometheus scrapes the gateway internally at `pushgateway:9091`.
 - Prometheus data persists under `$(DATA_DIR)/prometheus`.
 - Grafana data persists under `$(DATA_DIR)/grafana`.
 
