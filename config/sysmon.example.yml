@@ -1,7 +1,7 @@
 # sysmon configuration example
 
 push:
-  # URL of the Pushgateway that collects the host metrics
+  # URL of the Pushgateway that collects the host metrics; must be an absolute http:// URL.
   url: http://monitoring-gateway.lan:9092
   job: sysmon
   interval: 30s

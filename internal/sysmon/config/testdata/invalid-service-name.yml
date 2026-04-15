@@ -1,0 +1,7 @@
+push:
+  url: http://pushgateway.lan:9091/metrics
+  interval: 30s
+  timeout: 5s
+
+services:
+  - name: "   "
