@@ -46,9 +46,9 @@ This dashboard should prioritize one selected host, with a small fleet summary r
 ### `service`
 
 - query: `label_values(sysmon_service_active{host=~"$host"}, service)`
-- multi-select: disabled
-- includeAll: disabled
-- requires the selected host
+- filtered by selected `host`
+- multi-select: enabled
+- include all: enabled
 
 ## Layout
 
@@ -92,10 +92,6 @@ Panels:
 - stat: selected host boot ID
   - query: `sysmon_host_info{host=~"$host"}`
   - display boot ID from labels or table-style representation
-
-- table: selected host boot ID
-  - query: `sysmon_host_info{host=~"$host"}`
-  - show `boot_id` via `labelsToFields` so the text is readable
 
 - stat: selected host CPU percent
   - query: `sysmon_host_cpu_usage_ratio{host=~"$host"} * 100`
