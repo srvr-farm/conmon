@@ -20,7 +20,7 @@
   "graphTooltip": 1,
   "id": null,
   "links": [],
-  "panels": [
+      "panels": [
     {
       "collapsed": false,
       "gridPos": {
@@ -468,6 +468,7 @@
           "options": {}
         }
       ],
+      "title": "Fleet Host Summary",
       "type": "table"
     },
     {
@@ -1102,6 +1103,7 @@
           }
         }
       ],
+      "title": "Per-Core CPU Table",
       "type": "table"
     },
     {
@@ -1192,7 +1194,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "count(sysmon_service_active{host=~\"$host\",service=~\"$service\"})",
+          "expr": "count(sysmon_service_active{host=~\"$host\"})",
           "refId": "A"
         }
       ],
@@ -1274,7 +1276,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(sysmon_service_active{host=~\"$host\",service=~\"$service\"})",
+          "expr": "sum(sysmon_service_active{host=~\"$host\"})",
           "refId": "A"
         }
       ],
@@ -1356,7 +1358,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(sysmon_service_enabled{host=~\"$host\",service=~\"$service\"})",
+          "expr": "sum(sysmon_service_enabled{host=~\"$host\"})",
           "refId": "A"
         }
       ],
@@ -1438,7 +1440,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(sysmon_service_state{host=~\"$host\",service=~\"$service\",state=\"failed\"})",
+          "expr": "sum(sysmon_service_state{host=~\"$host\",state=\"failed\"})",
           "refId": "A"
         }
       ],
@@ -1492,7 +1494,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sysmon_service_state{host=~\"$host\",service=~\"$service\"} > 0",
+          "expr": "sysmon_service_state{host=~\"$host\"} > 0",
           "format": "table",
           "instant": true,
           "legendFormat": "{{service}}",
@@ -1505,7 +1507,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sysmon_service_active{host=~\"$host\",service=~\"$service\"}",
+          "expr": "sysmon_service_active{host=~\"$host\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "{{service}}",
@@ -1518,7 +1520,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sysmon_service_enabled{host=~\"$host\",service=~\"$service\"}",
+          "expr": "sysmon_service_enabled{host=~\"$host\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "{{service}}",
@@ -1531,7 +1533,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sysmon_service_uptime_seconds{host=~\"$host\",service=~\"$service\"}",
+          "expr": "sysmon_service_uptime_seconds{host=~\"$host\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "{{service}}",
@@ -1544,7 +1546,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sysmon_service_cpu_usage_seconds_total{host=~\"$host\",service=~\"$service\"}",
+          "expr": "sysmon_service_cpu_usage_seconds_total{host=~\"$host\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "{{service}}",
@@ -1557,7 +1559,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sysmon_service_memory_resident_bytes{host=~\"$host\",service=~\"$service\"}",
+          "expr": "sysmon_service_memory_resident_bytes{host=~\"$host\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "{{service}}",
@@ -1577,6 +1579,7 @@
           "options": {}
         }
       ],
+      "title": "Service Status",
       "type": "table"
     },
     {
@@ -1651,7 +1654,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(sysmon_service_cpu_usage_seconds_total{host=~\"$host\",service=~\"$service\"}[5m])",
+          "expr": "sysmon_service_cpu_usage_seconds_total{host=~\"$host\",service=~\"$service\"}",
           "legendFormat": "{{service}}",
           "range": true,
           "refId": "A"
@@ -1823,6 +1826,7 @@
       "type": "timeseries"
     }
   ],
+  "refresh": "30s",
   "schemaVersion": 39,
   "style": "dark",
   "tags": [
