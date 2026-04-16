@@ -615,9 +615,9 @@
           "expr": "sysmon_host_info{host=~\"$host\"}",
           "format": "table",
           "instant": true,
-          "legendFormat": "boot_id",
-          "range": false,
-          "refId": "A"
+        "legendFormat": "boot_id",
+        "range": false,
+        "refId": "A"
         }
       ],
       "transformations": [
@@ -628,6 +628,7 @@
           }
         }
       ],
+      "title": "Boot ID",
       "type": "table"
     },
     {
@@ -1855,8 +1856,8 @@
       {
         "current": {
           "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "text": "$__auto",
+          "value": "$__auto"
         },
         "datasource": {
           "type": "prometheus",
@@ -1864,9 +1865,9 @@
         },
         "definition": "label_values(sysmon_service_active{host=~\"$host\"}, service)",
         "hide": 0,
-        "includeAll": true,
+        "includeAll": false,
         "label": "Service",
-        "multi": true,
+        "multi": false,
         "name": "service",
         "query": "label_values(sysmon_service_active{host=~\"$host\"}, service)",
         "refresh": 1,
